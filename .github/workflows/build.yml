@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       real_open_default:
-        description: "Initial realOpen flag: 0 = pass through; 1 = return 1 for send/recv/recvmsg"
+        description: "Initial urlOpen flag: 0 = off; 1 = on with 10s/5s realOpen timer"
         required: true
         default: "0"
         type: choice
