@@ -24,9 +24,39 @@ jobs:
 
       - name: Unzip source
         run: |
-          mkdir -p build-src
-          unzip -q payload.zip -d build-src
-          test -f build-src/network_hooks.c
+          python3 - <<'PY'
+          from io import BytesIO
+          from pathlib import Path
+          from zipfile import BadZipFile, ZipFile
+
+          def find_source(data, depth=0):
+              try:
+                  with ZipFile(BytesIO(data)) as archive:
+                      names = archive.namelist()
+                      for name in names:
+                          if Path(name).name == "network_hooks.c":
+                              return archive.read(name)
+                      if depth < 2:
+                          for name in names:
+                              if name.lower().endswith(".zip"):
+                                  found = find_source(archive.read(name), depth + 1)
+                                  if found is not None:
+                                      return found
+              except BadZipFile:
+                  pass
+              return None
+
+          package = Path("payload.zip")
+          if not package.is_file():
+              raise SystemExit("Missing payload.zip at repository root")
+          source = find_source(package.read_bytes())
+          if source is None:
+              raise SystemExit("No network_hooks.c found in payload.zip or nested ZIP")
+          output = Path("build-src/network_hooks.c")
+          output.parent.mkdir(parents=True, exist_ok=True)
+          output.write_bytes(source)
+          print(f"Extracted {output} ({len(source)} bytes)")
+          PY
 
       - name: Fetch pinned fishhook source
         run: |
