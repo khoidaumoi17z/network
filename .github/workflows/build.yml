@@ -70,6 +70,45 @@ jobs:
             build-src/network_hooks.c vendor/fishhook/fishhook.c \
             -lobjc \
             -o dist/NetworkHooks.dylib
+          python3 - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          from struct import unpack_from
+
+          path = Path("dist/NetworkHooks.dylib")
+          data = bytearray(path.read_bytes())
+          if data[:4] != b"\xcf\xfa\xed\xfe":
+              raise SystemExit("Expected a thin 64-bit Mach-O")
+          ncmds = unpack_from("<I", data, 16)[0]
+          cursor = 32
+          sections = {}
+          for _ in range(ncmds):
+              cmd, cmdsize = unpack_from("<II", data, cursor)
+              if cmdsize < 8 or cursor + cmdsize > len(data):
+                  raise SystemExit("Invalid Mach-O load command")
+              if cmd == 0x19:
+                  nsects = unpack_from("<I", data, cursor + 64)[0]
+                  if 72 + nsects * 80 > cmdsize:
+                      raise SystemExit("Invalid Mach-O section table")
+                  for i in range(nsects):
+                      pos = cursor + 72 + i * 80
+                      name = bytes(data[pos:pos + 16]).split(b"\0")[0]
+                      segment = bytes(data[pos + 16:pos + 32]).split(b"\0")[0]
+                      size = unpack_from("<Q", data, pos + 40)[0]
+                      offset = unpack_from("<I", data, pos + 48)[0]
+                      if offset + size > len(data):
+                          raise SystemExit("Section extends beyond file")
+                      sections[(segment, name)] = (offset, size)
+              cursor += cmdsize
+          text_offset, text_size = sections[(b"__TEXT", b"__text")]
+          hash_offset, hash_size = sections[(b"__DATA", b"exthash")]
+          if hash_size != 64:
+              raise SystemExit("Expected 64-byte exthash section")
+          digest = sha256(data[text_offset:text_offset + text_size]).hexdigest().encode()
+          data[hash_offset:hash_offset + 64] = bytes(value ^ 0x5a for value in digest)
+          path.write_bytes(data)
+          print("Sealed __TEXT,__text SHA-256:", digest.decode())
+          PY
           codesign --force --sign - dist/NetworkHooks.dylib
 
       - name: Inspect and package
