@@ -6,15 +6,6 @@ on:
       - payload.zip
       - .github/workflows/build.yml
   workflow_dispatch:
-    inputs:
-      real_open_default:
-        description: "Initial urlOpen flag: 0 = off; 1 = on with 10s/5s realOpen timer"
-        required: true
-        default: "0"
-        type: choice
-        options:
-          - "0"
-          - "1"
 
 jobs:
   build:
@@ -67,20 +58,17 @@ jobs:
           curl -fsSLo vendor/fishhook/LICENSE "$base/LICENSE"
 
       - name: Build arm64 iOS dylib
-        env:
-          REAL_OPEN_DEFAULT: ${{ inputs.real_open_default || '0' }}
         run: |
           set -eu
-          test "$REAL_OPEN_DEFAULT" = 0 -o "$REAL_OPEN_DEFAULT" = 1
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
           mkdir -p dist
           xcrun --sdk iphoneos clang \
             -arch arm64 -isysroot "$SDK" -miphoneos-version-min=14.0 \
             -std=c11 -O2 -fvisibility=hidden -Wall -Wextra \
-            -DREAL_OPEN_DEFAULT="$REAL_OPEN_DEFAULT" \
             -Ivendor/fishhook \
             -dynamiclib -Wl,-install_name,@rpath/NetworkHooks.dylib \
             build-src/network_hooks.c vendor/fishhook/fishhook.c \
+            -lobjc \
             -o dist/NetworkHooks.dylib
           codesign --force --sign - dist/NetworkHooks.dylib
 
@@ -100,4 +88,3 @@ jobs:
           name: NetworkHooks-ios-arm64
           path: dist/NetworkHooks-ios-arm64.zip
           if-no-files-found: error
-          
